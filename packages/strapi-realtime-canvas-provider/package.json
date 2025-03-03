@@ -1,0 +1,13 @@
+{
+  "name": "strapi-realtime-canvas-provider",
+  "version": "0.0.1",
+  "description": "Real-time canvas provider for Strapi",
+  "strapi": {
+    "name": "strapi-realtime-canvas-provider",
+    "description": "Real-time canvas provider for Strapi",
+    "kind": "plugin"
+  },
+  "dependencies": {
+    "socket.io": "^4.6.1"
+  }
+}
