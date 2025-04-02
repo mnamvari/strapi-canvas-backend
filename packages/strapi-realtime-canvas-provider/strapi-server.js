@@ -21,6 +21,41 @@ module.exports = {
     // Initialize rooms for canvas sessions
     strapi.rooms = new Map();
 
+    // Initialize global z-index counter and locking mechanism for each canvas
+    strapi.zIndexCounters = new Map();
+    strapi.zIndexLocks = new Map();
+
+    // Function to get next z-index with locking to prevent race conditions
+    const getNextZIndex = async (canvasId) => {
+      // Initialize lock if it doesn't exist
+      if (!strapi.zIndexLocks.has(canvasId)) {
+        strapi.zIndexLocks.set(canvasId, false);
+      }
+      
+      // Initialize counter if it doesn't exist
+      if (!strapi.zIndexCounters.has(canvasId)) {
+        strapi.zIndexCounters.set(canvasId, 0);
+      }
+      
+      // Wait for lock to be available
+      while (strapi.zIndexLocks.get(canvasId)) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      
+      // Acquire lock
+      strapi.zIndexLocks.set(canvasId, true);
+      
+      try {
+        // Get and increment counter
+        const nextIndex = strapi.zIndexCounters.get(canvasId);
+        strapi.zIndexCounters.set(canvasId, nextIndex + 1);
+        return nextIndex;
+      } finally {
+        // Release lock
+        strapi.zIndexLocks.set(canvasId, false);
+      }
+    };
+    
     // Set up event handlers
     io.on('connection', (socket) => {
       console.log(`New connection: ${socket.id}`);
@@ -54,16 +89,24 @@ module.exports = {
       });
 
       // Handle drawing events
-      socket.on('draw', ({ canvasId, line }) => {
+      socket.on('draw', async({ canvasId, line }) => {
         console.log(`Draw event received for canvas ${canvasId}:`, line);
         const room = strapi.rooms.get(canvasId);
         
         if (room) {
+          // Get z-index from server
+          const zIndex = await getNextZIndex(canvasId);
+          console.log("Z-index assigned:", zIndex);
+          
+          // Add z-index to the line
+          const lineWithZIndex = { ...line, zIndex };
+
           // Add the new line to the canvas state
-          room.lines.push(line);
+          room.lines.push(lineWithZIndex);
           
           // Broadcast to all other clients in this room
-          socket.to(canvasId).emit('line-added', line);
+          socket.to(canvasId).emit('line-added', lineWithZIndex);
+          socket.emit('line-z-index-assigned', { lineId: line.id, zIndex });
           console.log(`Broadcasting line-added to room ${canvasId}`);
         }
       });
