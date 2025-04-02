@@ -55,6 +55,7 @@ module.exports = {
 
       // Handle drawing events
       socket.on('draw', ({ canvasId, line }) => {
+        console.log(`Draw event received for canvas ${canvasId}:`, line);
         const room = strapi.rooms.get(canvasId);
         
         if (room) {
@@ -63,19 +64,24 @@ module.exports = {
           
           // Broadcast to all other clients in this room
           socket.to(canvasId).emit('line-added', line);
+          console.log(`Broadcasting line-added to room ${canvasId}`);
         }
       });
 
       // Handle line updates (while drawing)
-      socket.on('update-line', ({ canvasId, lineIndex, points }) => {
+      socket.on('update-line', ({ canvasId, lineId, points }) => {
         const room = strapi.rooms.get(canvasId);
         
-        if (room && room.lines[lineIndex]) {
-          // Update the line points
-          room.lines[lineIndex].points = points;
-          
-          // Broadcast to all other clients in this room
-          socket.to(canvasId).emit('line-updated', { lineIndex, points });
+        if (room) {
+          // Find the line by ID
+          const lineIndex = room.lines.findIndex(line => line.id === lineId);
+          if (lineIndex !== -1) {
+            // Update the line points
+            room.lines[lineIndex].points = points;
+            
+            // Broadcast to all other clients in this room
+            socket.to(canvasId).emit('line-updated', { lineId, points });
+          }
         }
       });
 
