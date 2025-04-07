@@ -13,6 +13,7 @@ export default ({env}) => ({
                     user: env('SMTP_USERNAME'),
                     pass: env('SMTP_PASSWORD'),
                 },
+                secure: env.bool('SMTP_SECURE', false),
             },
             settings: {
                 defaultFrom: env('SMTP_FROM', 'canvas@example.com'),
