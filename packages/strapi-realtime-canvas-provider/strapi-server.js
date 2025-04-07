@@ -148,6 +148,53 @@ module.exports = {
       // Handle joining canvas room
       socket.on('join-canvas', async (canvasId) => {
         console.log(`join-canvas: ${canvasId}`);
+
+        // Get canvas settings
+        const canvasSettings = strapi.canvasSettings.get(canvasId) || {
+          requireApproval: false,
+          autoClear: false,
+          autoClearMinutes: 15,
+          disableDownload: false,
+          lastActivityTime: Date.now()
+        };
+        
+        // Check if approval is required and user is not the owner
+        if (canvasSettings.requireApproval && 
+          userData.authenticated && 
+          userData.email !== strapi.canvasOwners.get(canvasId)) {
+        
+        // Generate request ID
+        const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Store request
+        if (!strapi.pendingAccessRequests.has(canvasId)) {
+          strapi.pendingAccessRequests.set(canvasId, new Map());
+        }
+        strapi.pendingAccessRequests.get(canvasId).set(requestId, {
+          socketId: socket.id,
+          email: userData.email,
+          timestamp: Date.now()
+        });
+        
+        // Notify canvas owner
+        const ownerEmail = strapi.canvasOwners.get(canvasId);
+        // Find owner's socket
+        for (const [socketId, user] of strapi.canvasUsers.entries()) {
+          if (user.email === ownerEmail) {
+            const ownerSocket = io.sockets.sockets.get(socketId);
+            if (ownerSocket) {
+              ownerSocket.emit('access-request', {
+                requestId,
+                email: userData.email,
+                canvasId
+              });
+            }
+          }
+        }
+        
+        socket.emit('access-pending');
+        return;
+      }        
         try {
           socket.join(canvasId);
           console.log(`Socket ${socket.id} joined canvas ${canvasId}`);
@@ -232,15 +279,11 @@ module.exports = {
 
           // Update settings
           const currentSettings = strapi.canvasSettings.get(canvasId);
-          strapi.canvasSettings.set(canvasId, {
-            ...currentSettings,
-            ...settings,
-            lastActivityTime: Date.now() // Reset activity timer
-          });
-          console.log(`Canvas settings updated for ${canvasId}:`, strapi.canvasSettings.get(canvasId));
-
+          const updatedSettings = {...currentSettings, ...settings};
+          strapi.canvasSettings.set(canvasId, updatedSettings);
+          
           // Broadcast new settings
-          io.to(canvasId).emit('canvas-settings-updated', strapi.canvasSettings.get(canvasId));
+          io.to(canvasId).emit('canvas-settings-updated', updatedSettings);
         } else {
           socket.emit('error', { message: 'Only the canvas owner can update settings' });
         }
