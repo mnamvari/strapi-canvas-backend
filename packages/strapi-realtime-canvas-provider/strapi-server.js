@@ -25,6 +25,10 @@ module.exports = {
     strapi.zIndexCounters = new Map();
     strapi.zIndexLocks = new Map();
 
+    // Add user data structure to store email info
+    strapi.canvasUsers = new Map();
+    strapi.canvasOwners = new Map();
+
     // Function to get next z-index with locking to prevent race conditions
     const getNextZIndex = async (canvasId) => {
       // Initialize lock if it doesn't exist
@@ -60,34 +64,108 @@ module.exports = {
     io.on('connection', (socket) => {
       console.log(`New connection: ${socket.id}`);
 
+      let userData = {
+        userId: null,
+        email: 'Anonymous',
+        authenticated: false
+      };
+
+      // Extract and verify token
+      const token = socket.handshake.auth?.token;
+
+      const processAuthentication = async () => {
+        if (token) {
+          try {
+            // Verify token and get user info
+            const decoded = await strapi.plugins['users-permissions'].services.jwt.verify(token);
+            if (decoded && decoded.id) {
+              const user = await strapi.entityService.findOne('plugin::users-permissions.user', decoded.id, {
+                populate: ['role']
+              });
+
+              if (user) {
+                userData = {
+                  userId: user.id,
+                  email: user.email,
+                  authenticated: true
+                };
+
+                // Store user data
+                strapi.canvasUsers = strapi.canvasUsers || new Map();
+                strapi.canvasUsers.set(socket.id, userData);
+
+                console.log(`Authenticated user connected: ${userData.email}`);
+              }
+            }
+          } catch (error) {
+            // Just log the error and continue as anonymous
+            console.log('Token authentication failed:', error.message);
+          }
+        }
+      };
+
+      // Call authentication process but don't block connection
+      processAuthentication();
+
       // Handle joining canvas room
       socket.on('join-canvas', (canvasId) => {
         console.log(`join-canvas: ${canvasId}`);
-        socket.join(canvasId);
+        try {
+          strapi.rooms = strapi.rooms || new Map();
+          strapi.canvasUsers = strapi.canvasUsers || new Map();
+          strapi.canvasOwners = strapi.canvasOwners || new Map();
 
-        // Initialize room if it doesn't exist
-        if (!strapi.rooms.has(canvasId)) {
-          strapi.rooms.set(canvasId, {
-            shapes: [],
-            participants: new Set(),
+          socket.join(canvasId);
+          console.log(`Socket ${socket.id} joined canvas ${canvasId}`);
+
+          // Initialize room if it doesn't exist
+          if (!strapi.rooms.has(canvasId)) {
+            strapi.rooms.set(canvasId, {
+              shapes: [],
+              participants: new Set(),
+            });
+          }
+
+          const room = strapi.rooms.get(canvasId);
+          room.participants.add(socket.id);
+
+          // Set first authenticated user as owner
+          if (userData.authenticated && !strapi.canvasOwners.has(canvasId)) {
+            strapi.canvasOwners.set(canvasId, userData.email);
+            console.log(`Set ${userData.email} as canvas owner for ${canvasId}`);
+          }
+
+          const participantDetails = Array.from(room.participants)
+              .map(id => {
+                const user = strapi.canvasUsers?.get(id) || {email: 'Anonymous', userId: null};
+                return {
+                  id,
+                  email: user.email,
+                  isOwner: user.email === strapi.canvasOwners.get(canvasId)
+                };
+              });
+
+          // Send current state to the new participant
+          socket.emit('canvas-state', {
+            shapes: room.shapes,
+            participantCount: room.participants.size,
+            participants: participantDetails,
+            owner: strapi.canvasOwners.get(canvasId) || null,
           });
+
+          // Broadcast updated participant list to all users
+          io.to(canvasId).emit('participants-updated', {
+            participants: participantDetails,
+            owner: strapi.canvasOwners.get(canvasId) || null,
+          });
+
+          // Notify others about new participant
+          io.to(canvasId).emit('participant-count', room.participants.size);
+        } catch (error) {
+          console.error(`Error handling join-canvas:`, error);
+          socket.emit('error', {message: 'Failed to join canvas'});
         }
-
-        const room = strapi.rooms.get(canvasId);
-        room.participants.add(socket.id);
-
-        // Send current state to the new participant
-        socket.emit('canvas-state', {
-          shapes: room.shapes,
-          participantCount: room.participants.size
-        });
-
-        // Notify others about new participant
-        io.to(canvasId).emit('participant-count', room.participants.size);
-
-        console.log(`Socket ${socket.id} joined canvas ${canvasId}`);
       });
-
       // Handle drawing events
       socket.on('draw-shape', async ({ canvasId, shape }) => {
         console.log(`Draw-shape event received for canvas ${canvasId}:`, shape);
@@ -141,10 +219,28 @@ module.exports = {
 
       // Handle disconnections
       socket.on('disconnect', () => {
+        // Remove user email association
+        strapi.canvasUsers.delete(socket.id);
+
         // Find all rooms this socket was part of
         for (const [canvasId, room] of strapi.rooms.entries()) {
           if (room.participants.has(socket.id)) {
             room.participants.delete(socket.id);
+
+            const participantDetails = Array.from(room.participants).map(id => {
+              const user = strapi.canvasUsers.get(id);
+              return {
+                id,
+                email: user?.email || 'Anonymous',
+                isOwner: user?.email === strapi.canvasOwners.get(canvasId)
+              };
+            });
+
+            // Broadcast updated participant list
+            io.to(canvasId).emit('participants-updated', {
+              participants: participantDetails,
+              owner: strapi.canvasOwners.get(canvasId) || null
+            });
 
             // Notify remaining participants
             io.to(canvasId).emit('participant-count', room.participants.size);
