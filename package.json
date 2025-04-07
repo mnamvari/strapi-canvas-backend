@@ -13,6 +13,7 @@
   "dependencies": {
     "@strapi/plugin-cloud": "5.10.4",
     "@strapi/plugin-users-permissions": "5.10.4",
+    "@strapi/provider-email-nodemailer": "^5.12.3",
     "@strapi/strapi": "5.10.4",
     "better-sqlite3": "11.3.0",
     "react": "^18.0.0",
