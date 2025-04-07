@@ -44,7 +44,7 @@ export default {
     if (process.env.NODE_ENV === 'development' || process.env.EMAIL_BYPASS === 'true') {
       console.log('DEVELOPMENT MODE: Bypassing email sending');
       console.log('Magic Link:', magicLinkUrl);
-    
+
       // Return the token directly in development mode
       return {
         message: 'Development mode: Magic link generated',
@@ -55,6 +55,7 @@ export default {
     // Send email
     try {
       await strapi.plugins['email'].services.email.send({
+        from: process.env.SMTP_FROM || 'noreply@gmail.com',
         to: email,
         subject: 'Your Canvas Access Link',
         html: `<p>Click the link below to access the collaborative canvas:</p>

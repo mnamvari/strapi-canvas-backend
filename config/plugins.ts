@@ -5,7 +5,7 @@ export default ({env}) => ({
       },
     email: {
         config: {
-            provider: 'sendmail',
+            provider: 'nodemailer',
             providerOptions: {
                 host: env('SMTP_HOST', 'smtp.canvas.com'),
                 port: env.int('SMTP_PORT', 587),
