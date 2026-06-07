@@ -143,7 +143,7 @@ sequenceDiagram
     Owner->>S: approve-access { approved }
     S-->>C: access-granted / access-denied
   end
-  S->>S: create room if absent; add participant; assign owner if first
+  S->>S: create room if absent, add participant, assign owner if first
   S-->>C: canvas-state { shapes, participants, owner, settings }
   S-->>All: participants-updated, participant-count
 ```
