@@ -20,7 +20,6 @@ real-time plugin. The **client lives in a separate repository** (linked below).
 
 > **Live demo**
 > - App: https://strapi-real-time-canvas.vercel.app
-> - Backend API (Strapi Cloud): https://realistic-dinosaur-9cb4e5ec36.strapiapp.com
 >
 > **Client repository:** [mnamvari/strapi-canvas-frontend](https://github.com/mnamvari/strapi-canvas-frontend)
 
